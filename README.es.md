@@ -40,6 +40,7 @@ salen de la API.
 | `http_services(target, limit?)` | Fingerprint HTTP: código, título, tecnologías detectadas, CPE derivados. |
 | `end_of_life(target, limit?)` | Servicios con software en fin de vida (datos tipo endoflife.date). |
 | `exposure_summary(host)` | Resumen en una llamada de todo lo que HORIZON sabe de un único host: servicios, ficha HTTP, CVE por servicio, hallazgos web y certificados. |
+| `recent_changes(target, limit?)` | Novedades del último ciclo de escaneo en una llamada: servicios nuevos, CVE nuevas por servicio y hallazgos web nuevos, con la fecha del ciclo. |
 
 `target` es siempre una **IP o un CIDR** (HORIZON no admite nombres de host; /16 o más estrecho). Las
 listas devuelven `total` y `returned` para que el modelo sepa si se han truncado.

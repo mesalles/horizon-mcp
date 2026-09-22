@@ -39,6 +39,7 @@ pròpia clau d'API. Al codi no hi ha res específic de cap institució; els rang
 | `http_services(target, limit?)` | Fingerprint HTTP: codi, títol, tecnologies detectades, CPE derivats. |
 | `end_of_life(target, limit?)` | Serveis amb programari en fi de vida (dades tipus endoflife.date). |
 | `exposure_summary(host)` | Resum en una crida de tot el que HORIZON sap d'un únic host: serveis, fitxa HTTP, CVE per servei, troballes web i certificats. |
+| `recent_changes(target, limit?)` | Novetats de l'últim cicle d'escaneig en una crida: serveis nous, CVE noves per servei i troballes web noves, amb la data del cicle. |
 
 `target` és sempre una **IP o un CIDR** (HORIZON no admet noms de host; /16 o més estret). Les llistes
 retornen `total` i `returned` perquè el model sàpiga si s'han truncat.
