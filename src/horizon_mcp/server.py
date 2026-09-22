@@ -308,11 +308,14 @@ async def end_of_life(
 @mcp.tool(annotations=READ_ONLY)
 async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
     """One-call overview of a single host's external exposure: open ports and services,
-    CVE groups per service (highest CVSS first), web findings, and TLS certificates.
+    the HTTP fingerprint of each web service (status, page title, technologies), CVE
+    groups per service (highest CVSS first), web findings, and TLS certificates.
 
     Use this when an analyst asks "what does <IP> expose?" Pass a single IP address;
     for ranges use the individual tools. Everything HORIZON knows about the host is
-    fetched (no truncation), so keep it to one host at a time.
+    fetched (no truncation), so keep it to one host at a time. There is no need to
+    call `http_services`, `cves`, `web_findings` or `tls_certificates` afterwards for
+    the same host: their data is already included.
     """
     app = _app(ctx)
     try:
@@ -320,6 +323,7 @@ async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
         if "/" in ip:
             raise TargetError("exposure_summary takes a single IP address, not a range")
         ports, _ = await app.client.ports(ip)
+        http_rows, _ = await app.client.httpinfo(ip)
         cve_rows, _ = await app.client.cves(ip)
         web_rows, _ = await app.client.vulns_web(ip)
         tls_rows, _ = await app.client.tls(ip)
@@ -327,6 +331,7 @@ async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
         return _error(exc)
 
     compact_ports = [port_row(r) for r in ports]
+    http = [http_row(r) for r in http_rows]
     cve_groups = aggregate_cves(cve_rows)
     web = aggregate_web_findings(web_rows)
     certs = [tls_row(r) for r in tls_rows]
@@ -339,6 +344,7 @@ async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
         "hostnames_from_certificates": hostnames,
         "open_ports": len(compact_ports),
         "services": compact_ports,
+        "http_services": http,
         "cve_rows": len(cve_rows),
         "max_cvss": max((g["max_cvss"] for g in cve_groups), default=None),
         "cves_by_service": cve_groups,

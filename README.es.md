@@ -39,7 +39,7 @@ salen de la API.
 | `tls_certificates(target, limit?)` | Certificados y conexión TLS de los servicios HTTPS: CN, SAN, emisor, caducidad, versión y cifrado. |
 | `http_services(target, limit?)` | Fingerprint HTTP: código, título, tecnologías detectadas, CPE derivados. |
 | `end_of_life(target, limit?)` | Servicios con software en fin de vida (datos tipo endoflife.date). |
-| `exposure_summary(host)` | Resumen en una llamada de todo lo que HORIZON sabe de un único host. |
+| `exposure_summary(host)` | Resumen en una llamada de todo lo que HORIZON sabe de un único host: servicios, ficha HTTP, CVE por servicio, hallazgos web y certificados. |
 
 `target` es siempre una **IP o un CIDR** (HORIZON no admite nombres de host; /16 o más estrecho). Las
 listas devuelven `total` y `returned` para que el modelo sepa si se han truncado.

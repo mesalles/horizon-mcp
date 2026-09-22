@@ -75,6 +75,21 @@ def tls(ip: str, port: int, cn: str, sans: list[str], *, mismatched: bool = True
     }
 
 
+def http(ip: str, port: int, scheme: str, status: int, title: str, tech: list[str] | None,
+         cpes: list[str]) -> dict:
+    row = {
+        "extended_domain": [], "status_code": status, "account_ids": [ACCOUNT],
+        "first_seen": OLDER_MS, "scheme": scheme, "last_seen": CYCLE_MS, "title": title,
+        "content_type": "text/html", "content_length": 1234, "ip": ip,
+        "url": f"{scheme}://{ip}:{port}", "port": port, "cpes": cpes,
+        "raw_header": "HTTP/1.1 200 OK\r\n\r\n", "geoip": GEO, "asn": asn(ip),
+        "ip_origins": ["192.0.2.0/24"], "is_new": False,
+    }
+    if tech is not None:  # tech is optional in the real API
+        row["tech"] = tech
+    return row
+
+
 def eol(ip: str, cpes: list[str], eol_map: dict) -> dict:
     return {
         "extended_domain": [], "account_ids": [ACCOUNT], "data": "HTTP/1.1 200 OK",
@@ -114,6 +129,15 @@ WEB = [
 ]
 
 TLS = [tls("192.0.2.136", 443, "web.example.edu", ["web.example.edu", "www.example.edu"])]
+
+HTTP = [
+    http("192.0.2.41", 80, "http", 200, "Index of /", ["Apache HTTP Server:2.4.52", "Ubuntu"],
+         ["cpe:2.3:a:apache:http_server:2.4.52:*:*:*:*:*:*:*"]),
+    http("192.0.2.41", 8080, "http", 200, "Labelling app", None,
+         ["cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"]),
+    http("192.0.2.53", 443, "https", 200, "Welcome", ["Apache HTTP Server:2.4.68"],
+         ["cpe:2.3:a:apache:http_server:2.4.68:*:*:*:*:*:*:*"]),
+]
 
 EOL = [
     eol("192.0.2.41", ["cpe:/a:f5:nginx:1.18.0", "cpe:/o:canonical:ubuntu_linux:-"], {
