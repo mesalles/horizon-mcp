@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentació
+    url: https://github.com/mesalles/horizon-mcp/blob/main/README.md
+    about: README en català; README.es.md en castellà
+  - name: 🔐 Vulnerabilitats de seguretat
+    url: https://github.com/mesalles/horizon-mcp/security/advisories/new
+    about: Per a vulnerabilitats del servidor, feu servir un avís privat de seguretat en lloc d'una issue pública
