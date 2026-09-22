@@ -71,6 +71,7 @@ async def test_exposure_summary_combines_sources(server, httpx_mock):
     ip = "192.0.2.41"
     only = lambda rows: [r for r in rows if (r.get("ip") or r.get("asn", {}).get("ip")) == ip]  # noqa: E731
     httpx_mock.add_response(url=f"{BASE}/ports?ip={ip}", json=fx.envelope(only(fx.PORTS), scroll_id=None))
+    httpx_mock.add_response(url=f"{BASE}/httpinfo?ip={ip}", json=fx.envelope(only(fx.HTTP), scroll_id=None))
     httpx_mock.add_response(url=f"{BASE}/cves?ip={ip}", json=fx.envelope(only(fx.CVES), scroll_id=None))
     httpx_mock.add_response(url=f"{BASE}/vulns_web?ip={ip}", json=fx.envelope(only(fx.WEB), scroll_id=None))
     httpx_mock.add_response(url=f"{BASE}/tls?ip={ip}", json=fx.envelope([], scroll_id=None))
@@ -79,6 +80,9 @@ async def test_exposure_summary_combines_sources(server, httpx_mock):
     data = _payload(result)
     assert data["host"] == ip
     assert data["open_ports"] == 3
+    assert [(h["port"], h["title"]) for h in data["http_services"]] == [(80, "Index of /"), (8080, "Labelling app")]
+    assert data["http_services"][0]["tech"] == ["Apache HTTP Server:2.4.52", "Ubuntu"]
+    assert data["http_services"][1]["tech"] == []  # optional field in the API
     assert data["max_cvss"] == 9.8
     assert [g["port"] for g in data["cves_by_service"]] == [80, 8080]
     assert data["web_findings"][0]["name"].startswith("Servidor web con listado")
