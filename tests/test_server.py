@@ -11,7 +11,7 @@ from . import fixtures as fx
 BASE = "https://horizon.test"
 EXPECTED_TOOLS = {
     "inventory", "open_ports", "cves", "web_findings", "tls_certificates",
-    "http_services", "end_of_life", "exposure_summary",
+    "http_services", "end_of_life", "exposure_summary", "recent_changes",
 }
 
 
@@ -100,3 +100,28 @@ async def test_horizon_auth_failure_is_reported_not_raised(server, httpx_mock):
     async with Client(server) as client:
         result = await client.call_tool("inventory", {})
     assert "API key" in _payload(result)["error"]
+
+
+async def test_recent_changes_uses_new_only_and_groups(server, httpx_mock):
+    cidr = "192.0.2.0/24"
+    new_ports = [r for r in fx.PORTS if r["is_new"]]
+    new_cves = [r for r in fx.CVES if r["is_new"]]
+    httpx_mock.add_response(url=f"{BASE}/ports?ip=192.0.2.0%2F24&new_only=true",
+                            json=fx.envelope(new_ports, scroll_id=None))
+    httpx_mock.add_response(url=f"{BASE}/cves?ip=192.0.2.0%2F24&new_only=true",
+                            json=fx.envelope(new_cves, scroll_id=None))
+    httpx_mock.add_response(url=f"{BASE}/vulns_web?ip=192.0.2.0%2F24&new_only=true",
+                            json=fx.envelope([], scroll_id=None))
+    async with Client(server) as client:
+        result = await client.call_tool("recent_changes", {"target": cidr})
+    data = _payload(result)
+    assert data["target"] == cidr
+    assert data["cycle_date"] == "2026-09-15"
+    assert data["counts"] == {"new_services": 1, "new_cve_rows": 2, "new_web_findings": 0}
+    assert data["new_services"][0]["port"] == 2200 and data["new_services"][0]["new"] is True
+    assert len(data["new_cves_by_service"]) == 1
+    assert data["new_cves_by_service"][0]["new_cves"] == 2
+    assert data["new_web_findings"] == []
+    # exactly one request per source, all with new_only
+    assert len(httpx_mock.get_requests()) == 3
+    assert all(r.url.params.get("new_only") == "true" for r in httpx_mock.get_requests())

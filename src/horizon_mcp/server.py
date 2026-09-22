@@ -52,6 +52,8 @@ Facts to keep in mind when interpreting results:
   backports and open-ended NVD version ranges. Say so when reporting CVEs.
 - Web findings come from Nuclei templates; `severity` may be `panel` (an exposed admin
   login page), which HORIZON treats as its own category.
+- For "what is new / what changed" questions use `recent_changes`; for "what does host X
+  expose" use `exposure_summary`. Both are single-call summaries.
 - Lists are capped (`returned` vs `total`): if truncated, narrow the target or raise `limit`.
 """
 
@@ -351,4 +353,55 @@ async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
         "web_findings": web,
         "tls_certificates": certs,
         "last_seen": max((p["last_seen"] for p in compact_ports if p.get("last_seen")), default=None),
+    }
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def recent_changes(
+    ctx: Context,
+    target: str,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """What HORIZON saw for the first time in its latest scan cycle within an IP or CIDR:
+    new open services, new CVEs (grouped per service) and new web findings, in one call.
+
+    "New" is relative to HORIZON's own scan cycle (typically weekly), not to the last
+    time you asked. It means first_seen == last_seen == the cycle timestamp.
+    `cycle_date` tells you which cycle that is. HORIZON does not report services that
+    disappeared; compare with `open_ports` if you need that.
+
+    Args:
+        target: IPv4/IPv6 address or CIDR.
+        limit: max raw rows to fetch per source (default 200, hard cap 1000).
+    """
+    app = _app(ctx)
+    try:
+        cidr = _target(app, target)
+        cap = _limit(app, limit)
+        ports, ports_total = await app.client.ports(cidr, max_rows=cap, new_only=True)
+        cve_rows, cves_total = await app.client.cves(cidr, max_rows=cap, new_only=True)
+        web_rows, web_total = await app.client.vulns_web(cidr, max_rows=cap, new_only=True)
+    except (TargetError, HorizonError) as exc:
+        return _error(exc)
+
+    new_services = [port_row(r) for r in ports]
+    new_cves = aggregate_cves(cve_rows)
+    new_web = aggregate_web_findings(web_rows)
+    cycle_dates = (
+        [p["first_seen"] for p in new_services if p.get("first_seen")]
+        + [g["first_seen"] for g in new_cves if g.get("first_seen")]
+        + [f["first_seen"] for f in new_web if f.get("first_seen")]
+    )
+    return {
+        "target": cidr,
+        "cycle_date": max(cycle_dates, default=None),
+        "counts": {
+            "new_services": len(new_services),
+            "new_cve_rows": len(cve_rows),
+            "new_web_findings": len(new_web),
+        },
+        "totals": {"services": ports_total, "cve_rows": cves_total, "web_findings": web_total},
+        "new_services": new_services,
+        "new_cves_by_service": new_cves,
+        "new_web_findings": new_web,
     }
