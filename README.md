@@ -123,7 +123,7 @@ El servidor **no autentica els clients**: poseu-lo darrere d'un proxy invers amb
 | `HORIZON_TIMEOUT` | `60` | Segons per petició. |
 | `HORIZON_MIN_INTERVAL` | `0.5` | Segons mínims entre dues peticions a HORIZON. |
 | `HORIZON_MAX_ROWS` | `200` | Límit per defecte de files de les eines de llista (màxim absolut 1.000). |
-| `HORIZON_USER_AGENT` | UA de navegador | HORIZON és darrere de Cloudflare, que bloqueja el User-Agent per defecte de les biblioteques HTTP (error 1010). El valor per defecte està verificat. |
+| `HORIZON_USER_AGENT` | `horizon-mcp/<versió> (+URL del repo)` | HORIZON és darrere de Cloudflare, que bloqueja el User-Agent per defecte de les biblioteques HTTP (error 1010). El valor per defecte, que identifica aquest projecte, està verificat; un UA de navegador també passa. |
 
 ## Coses a saber sobre les dades d'HORIZON
 
