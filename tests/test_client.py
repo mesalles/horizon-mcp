@@ -26,7 +26,7 @@ async def test_sends_key_and_user_agent(client, httpx_mock):
     await client.root()
     request = httpx_mock.get_request()
     assert request.headers["x-api-key"] == "k" * 32
-    assert request.headers["user-agent"].startswith("Mozilla/5.0")
+    assert request.headers["user-agent"].startswith("horizon-mcp/")
 
 
 async def test_missing_key_maps_to_helpful_error(client, httpx_mock):

@@ -41,6 +41,9 @@ def main(argv: list[str] | None = None) -> int:
         stream=sys.stderr,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # httpx logs every request at INFO; keep that for DEBUG runs only.
+    if args.log_level != "DEBUG":
+        logging.getLogger("httpx").setLevel(logging.WARNING)
 
     try:
         settings = load_settings()
