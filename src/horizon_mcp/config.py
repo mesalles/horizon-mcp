@@ -12,16 +12,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from . import __version__
+
 DEFAULT_API_URL = "https://api.horizon.delta90.com"
 
 # HORIZON sits behind Cloudflare WAF, which rejects the default User-Agent of most
-# HTTP libraries (error 1010, HTML 403). This browser-like UA is verified to pass.
-# A descriptive UA such as "horizon-mcp/0.1 (+https://github.com/mesalles/horizon-mcp)"
-# has NOT been verified yet; override with HORIZON_USER_AGENT once it is.
-DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/128.0 Safari/537.36"
-)
+# HTTP libraries (error 1010, HTML 403). This descriptive, honest UA is verified to
+# pass (2026-09-22); a browser-like one also works. Override with HORIZON_USER_AGENT.
+DEFAULT_USER_AGENT = f"horizon-mcp/{__version__} (+https://github.com/mesalles/horizon-mcp)"
 
 
 class ConfigError(RuntimeError):
