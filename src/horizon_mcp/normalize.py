@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import ipaddress
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -60,6 +60,43 @@ def ms_to_date(value: Any) -> str | None:
         return None
 
 
+def today() -> date:
+    """Current UTC date. Kept as a function so tests can monkeypatch it."""
+    return datetime.now(tz=UTC).date()
+
+
+def days_since(date_str: str | None) -> int | None:
+    """Whole days between a ``YYYY-MM-DD`` string and today (UTC). None when missing."""
+    if not date_str:
+        return None
+    try:
+        return (today() - date.fromisoformat(date_str)).days
+    except ValueError:
+        return None
+
+
+def mark_latest_cycle(items: list[dict[str, Any]], cycle_date: str | None,
+                      *, tolerance_days: int = 1) -> list[dict[str, Any]]:
+    """Set ``observed_in_latest_cycle`` on each item by comparing its ``last_seen`` with
+    *cycle_date* (the date of the latest scan cycle for the host, taken from ``/ports``).
+
+    HORIZON's indices have different cadences, so a finding whose ``last_seen`` is
+    months older than the host's services was most likely not re-observed and may be
+    gone. Items are mutated in place and returned for convenience.
+    """
+    ref = date.fromisoformat(cycle_date) if cycle_date else None
+    for item in items:
+        seen = item.get("last_seen")
+        if ref is None or not seen:
+            item["observed_in_latest_cycle"] = None
+            continue
+        try:
+            item["observed_in_latest_cycle"] = (ref - date.fromisoformat(seen)).days <= tolerance_days
+        except ValueError:
+            item["observed_in_latest_cycle"] = None
+    return items
+
+
 def cpe22_to_23(cpe: str) -> str:
     """Convert a CPE 2.2 URI (``cpe:/a:vendor:product:version``) to 2.3 formatted string.
 
@@ -107,6 +144,7 @@ def port_row(raw: dict[str, Any]) -> dict[str, Any]:
         "cpes": list(raw.get("cpes") or []),
         "first_seen": ms_to_date(raw.get("first_seen")),
         "last_seen": ms_to_date(raw.get("last_seen")),
+        "days_since_last_seen": days_since(ms_to_date(raw.get("last_seen"))),
         "new": bool(raw.get("is_new")),
     }
 
@@ -154,6 +192,7 @@ def aggregate_cves(rows: list[dict[str, Any]], *, min_cvss: float = 0.0) -> list
 
     for grp in groups.values():
         grp["cves"].sort(key=lambda c: c["cvss"], reverse=True)
+        grp["days_since_last_seen"] = days_since(grp["last_seen"])
     return sorted(groups.values(), key=lambda g: (g["max_cvss"], g["cve_count"]), reverse=True)
 
 
@@ -190,12 +229,18 @@ def aggregate_web_findings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         grp["last_seen"] = max(filter(None, [grp["last_seen"], ls]), default=None)
         grp["new"] = grp["new"] or bool(raw.get("is_new"))
 
+    for grp in groups.values():
+        grp["days_since_last_seen"] = days_since(grp["last_seen"])
     order = {"critical": 5, "high": 4, "medium": 3, "low": 2, "panel": 1, "info": 0}
     return sorted(groups.values(), key=lambda g: order.get(g["severity"] or "", -1), reverse=True)
 
 
 def tls_row(raw: dict[str, Any]) -> dict[str, Any]:
-    """Compact view of one ``/tls`` row (httpx TLS probe)."""
+    """Compact view of one ``/tls`` row (httpx TLS probe).
+
+    HORIZON connects by IP address, so the certificate never matches the connected
+    name: the API's ``mismatched`` flag is always true and is deliberately dropped.
+    """
     tls = raw.get("tls") or {}
     return {
         "ip": raw.get("ip"),
@@ -209,11 +254,18 @@ def tls_row(raw: dict[str, Any]) -> dict[str, Any]:
         "issuer": tls.get("issuer_org")[0] if tls.get("issuer_org") else tls.get("issuer_cn"),
         "not_before": (tls.get("not_before") or "")[:10] or None,
         "not_after": (tls.get("not_after") or "")[:10] or None,
-        "name_mismatch": bool(tls.get("mismatched")),
+        "days_to_expiry": _days_until((tls.get("not_after") or "")[:10]),
         "sha256": (tls.get("fingerprint_hash") or {}).get("sha256"),
         "cpes": list(raw.get("cpes") or []),
         "last_seen": ms_to_date(raw.get("last_seen")),
+        "days_since_last_seen": days_since(ms_to_date(raw.get("last_seen"))),
     }
+
+
+def _days_until(date_str: str | None) -> int | None:
+    """Days from today until a ``YYYY-MM-DD`` date (negative if already past)."""
+    d = days_since(date_str)
+    return -d if d is not None else None
 
 
 def http_row(raw: dict[str, Any]) -> dict[str, Any]:
@@ -227,6 +279,7 @@ def http_row(raw: dict[str, Any]) -> dict[str, Any]:
         "tech": list(raw.get("tech") or []),
         "cpes": list(raw.get("cpes") or []),
         "last_seen": ms_to_date(raw.get("last_seen")),
+        "days_since_last_seen": days_since(ms_to_date(raw.get("last_seen"))),
     }
 
 

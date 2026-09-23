@@ -140,6 +140,13 @@ Descobertes empíricament: la documentació de l'API no descriu els camps de res
   dona l'identificador de plantilla ni CVE/CVSS per a aquestes.
 - `/eol` **no porta el port**.
 - La severitat `panel` (pàgina d'inici de sessió exposada) és una categoria pròpia d'HORIZON.
+- **HORIZON connecta per IP**, sense SNI ni capçalera `Host` del nom real: els títols i tecnologies HTTP són
+  els del *virtual host* per defecte, i el certificat mai no coincideix amb el nom (per això no es reporta
+  cap `name_mismatch`). El lloc real que hi ha darrere d'un nom pot ser un altre.
+- **Cada índex té la seva cadència.** Totes les files porten `last_seen` i `days_since_last_seen`; el resum
+  d'un host inclou `data_freshness` (darrera observació per font) i marca cada troballa web i grup de CVE amb
+  `observed_in_latest_cycle`. Una troballa amb `false` no s'ha tornat a veure al darrer cicle dels serveis
+  del host i probablement és històrica.
 
 ## Desenvolupament
 

@@ -29,6 +29,7 @@ from .normalize import (
     eol_row,
     hosts_summary,
     http_row,
+    mark_latest_cycle,
     port_row,
     tls_row,
     validate_target,
@@ -45,8 +46,15 @@ in this /24 have known CVEs?", or "what changed since the last scan cycle?".
 Facts to keep in mind when interpreting results:
 - Targets are IP addresses or CIDR ranges, never hostnames. Call `inventory` first if you
   do not know the institution's ranges.
-- Data comes from HORIZON's own scan cycle (typically weekly). `last_seen` tells you how
-  fresh a record is; `new=true` means first seen in the latest cycle.
+- Data comes from HORIZON's own scan cycle (typically weekly), and each index (ports,
+  HTTP, CVEs, web findings, TLS) runs on its own cadence, so dates differ between them.
+  `last_seen` / `days_since_last_seen` tell you how fresh a record is; `new=true` means
+  first seen in the latest cycle. A finding not re-observed for weeks while the host's
+  services are current is probably historical: report it as "last seen on <date>".
+- HTTP titles and technologies describe the *default virtual host*: HORIZON connects by
+  IP address, without SNI or a Host header for the real name. The site actually served
+  under a hostname may differ. For the same reason TLS name mismatches are meaningless
+  and are not reported.
 - Ports/services are Nmap-derived. CVEs are inferred from the detected CPE (product +
   version), NOT verified by exploitation: expect false positives from distribution
   backports and open-ended NVD version ranges. Say so when reporting CVEs.
@@ -318,6 +326,12 @@ async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
     fetched (no truncation), so keep it to one host at a time. There is no need to
     call `http_services`, `cves`, `web_findings` or `tls_certificates` afterwards for
     the same host: their data is already included.
+
+    Freshness: `data_freshness` gives the latest observation date per source, because
+    HORIZON's indices run on different cadences. Each web finding and CVE group carries
+    `observed_in_latest_cycle`: false means it was NOT re-observed in the host's latest
+    services cycle and may be historical (fixed or gone). Report those as "last seen on
+    <date>", not as current.
     """
     app = _app(ctx)
     try:
@@ -341,9 +355,26 @@ async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
         {c["subject_cn"] for c in certs if c.get("subject_cn")}
         | {san for c in certs for san in c.get("subject_alt_names") or []}
     )
+
+    def _latest(rows: list[dict[str, Any]]) -> str | None:
+        return max((r["last_seen"] for r in rows if r.get("last_seen")), default=None)
+
+    # The services index is the reference clock for "is this still there?".
+    cycle_date = _latest(compact_ports)
+    mark_latest_cycle(web, cycle_date)
+    mark_latest_cycle(cve_groups, cycle_date)
+
     return {
         "host": ip,
         "hostnames_from_certificates": hostnames,
+        "data_freshness": {
+            "services": cycle_date,
+            "http": _latest(http),
+            "cves": _latest(cve_groups),
+            "web_findings": _latest(web),
+            "tls": _latest(certs),
+            "note": "Each HORIZON index has its own scan cadence; dates differ by source.",
+        },
         "open_ports": len(compact_ports),
         "services": compact_ports,
         "http_services": http,
@@ -351,8 +382,9 @@ async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
         "max_cvss": max((g["max_cvss"] for g in cve_groups), default=None),
         "cves_by_service": cve_groups,
         "web_findings": web,
+        "web_findings_not_reobserved": sum(1 for f in web if f.get("observed_in_latest_cycle") is False),
         "tls_certificates": certs,
-        "last_seen": max((p["last_seen"] for p in compact_ports if p.get("last_seen")), default=None),
+        "last_seen": cycle_date,
     }
 
 

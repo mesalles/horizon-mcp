@@ -85,7 +85,14 @@ async def test_exposure_summary_combines_sources(server, httpx_mock):
     assert data["http_services"][1]["tech"] == []  # optional field in the API
     assert data["max_cvss"] == 9.8
     assert [g["port"] for g in data["cves_by_service"]] == [80, 8080]
-    assert data["web_findings"][0]["name"].startswith("Servidor web con listado")
+    by_name = {f["name"][:20]: f for f in data["web_findings"]}
+    assert by_name["Servidor web con lis"]["observed_in_latest_cycle"] is False   # last seen 2026-08-06
+    assert by_name["Exposición de inform"]["observed_in_latest_cycle"] is True    # last seen in cycle
+    assert data["web_findings_not_reobserved"] == 1
+    assert all(g["observed_in_latest_cycle"] is True for g in data["cves_by_service"])
+    assert data["data_freshness"]["services"] == "2026-09-15"
+    assert data["data_freshness"]["web_findings"] == "2026-09-15"
+    assert "note" in data["data_freshness"]
     assert data["last_seen"] == "2026-09-15"
 
 
