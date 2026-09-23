@@ -1,10 +1,15 @@
+from datetime import date
+
 import pytest
 
+from horizon_mcp import normalize
 from horizon_mcp.normalize import (
     TargetError,
     aggregate_cves,
     aggregate_web_findings,
     cpe22_to_23,
+    days_since,
+    mark_latest_cycle,
     eol_row,
     hosts_summary,
     ms_to_date,
@@ -14,6 +19,11 @@ from horizon_mcp.normalize import (
 )
 
 from . import fixtures as fx
+
+
+@pytest.fixture(autouse=True)
+def _frozen_today(monkeypatch):
+    monkeypatch.setattr(normalize, "today", lambda: date(2026, 9, 22))
 
 
 # --- targets -------------------------------------------------------------------------
@@ -39,6 +49,22 @@ def test_validate_target_rejects_hostnames_and_wide_prefixes(raw):
 
 
 # --- helpers -------------------------------------------------------------------------
+
+
+def test_days_since_and_latest_cycle_marking():
+    assert days_since("2026-09-15") == 7
+    assert days_since(None) is None and days_since("garbage") is None
+    items = [{"last_seen": "2026-09-15"}, {"last_seen": "2026-09-14"}, {"last_seen": "2026-08-06"}, {"last_seen": None}]
+    mark_latest_cycle(items, "2026-09-15")
+    assert [i["observed_in_latest_cycle"] for i in items] == [True, True, False, None]
+    mark_latest_cycle(items, None)
+    assert all(i["observed_in_latest_cycle"] is None for i in items)
+
+
+def test_rows_carry_days_since_last_seen():
+    assert port_row(fx.PORTS[0])["days_since_last_seen"] == 7
+    assert aggregate_cves(fx.CVES)[0]["days_since_last_seen"] == 7
+    assert tls_row(fx.TLS[0])["days_since_last_seen"] == 7
 
 
 def test_ms_to_date():
@@ -69,7 +95,7 @@ def test_port_row_trims_noise_and_handles_optional_product():
         "ip": "192.0.2.41", "port": 80, "transport": "TCP", "service": "http",
         "product": "Apache httpd", "tls": False,
         "cpes": ["cpe:/a:apache:http_server:2.4.52", "cpe:/o:canonical:ubuntu_linux:-"],
-        "first_seen": "2026-08-06", "last_seen": "2026-09-15", "new": False,
+        "first_seen": "2026-08-06", "last_seen": "2026-09-15", "days_since_last_seen": 7, "new": False,
     }
     assert "geoip" not in row and "asn" not in row
     assert port_row(fx.PORTS[4])["product"] is None  # vendorproduct missing
@@ -110,7 +136,7 @@ def test_aggregate_cves_min_cvss_filter():
 def test_aggregate_web_findings_collapses_url_variants_and_extracts_ip_port():
     findings = aggregate_web_findings(fx.WEB)
     names = {(f["ip"], f["port"], f["name"]) for f in findings}
-    assert len(findings) == 4
+    assert len(findings) == 5
     redirect = next(f for f in findings if "redirección" in f["name"])
     assert redirect["ip"] == "192.0.2.36" and redirect["port"] == 80
     assert len(redirect["urls"]) == 3
@@ -118,7 +144,7 @@ def test_aggregate_web_findings_collapses_url_variants_and_extracts_ip_port():
     assert phpinfo["port"] == 443  # defaulted from https scheme
     assert ("192.0.2.46", 9090, "Panel de Inicio de Sesión de Cockpit Expuesto") in names
     # severity order: medium > low > panel > info
-    assert [f["severity"] for f in findings] == ["medium", "low", "panel", "info"]
+    assert [f["severity"] for f in findings] == ["medium", "low", "panel", "info", "info"]
 
 
 def test_tls_row_extracts_certificate_essentials():
@@ -127,7 +153,8 @@ def test_tls_row_extracts_certificate_essentials():
     assert row["subject_alt_names"] == ["web.example.edu", "www.example.edu"]
     assert row["issuer"] == "Let's Encrypt"
     assert row["not_after"] == "2026-12-09"
-    assert row["name_mismatch"] is True
+    assert "name_mismatch" not in row  # always true when connecting by IP: dropped
+    assert row["days_to_expiry"] == (date(2026, 12, 9) - date(2026, 9, 22)).days
     assert row["tls_version"] == "tls12"
     assert row["sha256"] == "b" * 64
 

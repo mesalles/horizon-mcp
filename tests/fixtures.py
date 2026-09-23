@@ -45,10 +45,11 @@ def cve(ip: str, port: int, cve_id: str, cvss: float, severity: str, cpe: str, *
     }
 
 
-def web(ip: str, url: str, name: str, severity: str, *, new: bool = False) -> dict:
+def web(ip: str, url: str, name: str, severity: str, *, new: bool = False,
+        last_seen: int = OLDER_MS) -> dict:
     return {
         "severity": severity, "extended_domain": [], "account_ids": [ACCOUNT],
-        "first_seen": OLDER_MS, "last_seen": OLDER_MS, "ssl": False, "url": url,
+        "first_seen": OLDER_MS, "last_seen": last_seen, "ssl": False, "url": url,
         "name": name, "timestamp": CYCLE_MS, "geoip": GEO, "asn": asn(ip),
         "ip_origins": ["192.0.2.0/24"], "is_new": new,
     }
@@ -126,6 +127,8 @@ WEB = [
     web("192.0.2.46", "https://192.0.2.46:9090/", "Panel de Inicio de Sesión de Cockpit Expuesto", "panel"),
     web("192.0.2.41", "http://192.0.2.41:80", "Servidor web con listado de directorios habilitado", "info"),
     web("192.0.2.33", "https://192.0.2.33/time.php", "Exposición de información sensible mediante página PHPinfo", "low"),
+    web("192.0.2.41", "http://192.0.2.41:8080/README.md", "Exposición de información mediante acceso público al archivo README.md", "info",
+        last_seen=CYCLE_MS),
 ]
 
 TLS = [tls("192.0.2.136", 443, "web.example.edu", ["web.example.edu", "www.example.edu"])]
