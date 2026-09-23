@@ -22,10 +22,12 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.context import Context
 from mcp.types import ToolAnnotations
 
-from . import __version__
-from .client import HorizonClient, HorizonError
-from .config import Settings, load_settings
-from .normalize import (
+# Absolute imports on purpose: `mcp dev src/horizon_mcp/server.py` loads this file as a
+# script, where relative imports have no parent package.
+from horizon_mcp import __version__
+from horizon_mcp.client import HorizonClient, HorizonError
+from horizon_mcp.config import Settings, load_settings
+from horizon_mcp.normalize import (
     TargetError,
     aggregate_cves,
     aggregate_web_findings,

@@ -100,10 +100,13 @@ Dins de Claude Code, `/mcp` mostra l'estat del servidor i les eines carregades.
 ## Provar-lo sense cap client
 
 ```bash
-uv run mcp dev src/horizon_mcp/server.py
+uv run horizon-mcp --check                     # valida la configuració i surt
+uv run horizon-mcp --ping                      # crida real a HORIZON: API, compte, rangs
+uv run mcp dev src/horizon_mcp/server.py       # MCP Inspector (requereix Node: fa servir npx)
 ```
 
-Obre l'**MCP Inspector** al navegador: llista d'eines, esquemes i crides manuals amb el JSON de resposta.
+L'**MCP Inspector** s'obre al navegador: llista d'eines, esquemes i crides manuals amb el JSON de
+resposta. Amb `--log-level DEBUG` el servidor també mostra cada petició HTTP a HORIZON per stderr.
 
 ## Servei compartit (HTTP)
 
