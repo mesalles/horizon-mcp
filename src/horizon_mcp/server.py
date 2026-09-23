@@ -183,6 +183,12 @@ async def _fetch(
     return rows, total
 
 
+def _is_web(svc: dict[str, Any]) -> bool:
+    """Heuristic: an Nmap service that an HTTP fingerprint could exist for."""
+    service = (svc.get("service") or "").lower()
+    return service.startswith("http") or service in {"ssl", "ssl/http", "https-alt"} or bool(svc.get("tls"))
+
+
 def _error(exc: Exception) -> dict[str, Any]:
     """Return errors as data so the model can explain them instead of crashing the turn."""
     return {"error": str(exc)}
@@ -484,6 +490,9 @@ async def recent_changes(
     `cycle_date` tells you which cycle that is. HORIZON does not report services that
     disappeared; compare with `open_ports` if you need that.
 
+    New web services carry their HTTP fingerprint inline (`http`: status, title,
+    technologies), so there is no need to call `http_services` afterwards for them.
+
     Args:
         target: IPv4/IPv6 address, CIDR or hostname (resolved here; see `resolved_ips`).
         limit: max raw rows to fetch per source (default 200, hard cap 1000).
@@ -495,10 +504,23 @@ async def recent_changes(
         ports, ports_total = await _fetch(app.client.ports, res, max_rows=cap, new_only=True)
         cve_rows, cves_total = await _fetch(app.client.cves, res, max_rows=cap, new_only=True)
         web_rows, web_total = await _fetch(app.client.vulns_web, res, max_rows=cap, new_only=True)
+        new_services = [port_row(r) for r in ports]
+        # One extra request (not per service) to describe what the new web services serve.
+        # The HTTP index has its own cadence, so it is queried without new_only and joined
+        # on (ip, port).
+        http_by_key: dict[tuple[str, int], dict[str, Any]] = {}
+        if any(_is_web(p) for p in new_services):
+            http_rows, _ = await _fetch(app.client.httpinfo, res, max_rows=app.settings.hard_max_rows)
+            http_by_key = {(h["ip"], h["port"]): h for h in (http_row(r) for r in http_rows)}
     except (TargetError, HorizonError) as exc:
         return _error(exc)
 
-    new_services = [port_row(r) for r in ports]
+    for svc in new_services:
+        if _is_web(svc):
+            hit = http_by_key.get((svc["ip"], svc["port"]))
+            svc["http"] = (
+                {k: hit[k] for k in ("http_status", "title", "tech", "last_seen")} if hit else None
+            )
     new_cves = aggregate_cves(cve_rows)
     new_web = aggregate_web_findings(web_rows)
     cycle_dates = (

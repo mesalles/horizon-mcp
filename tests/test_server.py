@@ -219,6 +219,34 @@ async def test_recent_changes_uses_new_only_and_groups(server, httpx_mock):
     assert len(data["new_cves_by_service"]) == 1
     assert data["new_cves_by_service"][0]["new_cves"] == 2
     assert data["new_web_findings"] == []
-    # exactly one request per source, all with new_only
+    # exactly one request per source, all with new_only; the only new service is SSH,
+    # so no /httpinfo request is made
     assert len(httpx_mock.get_requests()) == 3
     assert all(r.url.params.get("new_only") == "true" for r in httpx_mock.get_requests())
+    assert "http" not in data["new_services"][0]
+
+
+async def test_recent_changes_joins_http_fingerprint_for_new_web_services(server, httpx_mock):
+    cidr = "192.0.2.0/24"
+    new_ports = [
+        fx.port("192.0.2.53", 443, "http", "Apache httpd", ["cpe:/a:apache:http_server:2.4.68"], ssl=True, new=True),
+        fx.port("192.0.2.160", 443, "ssl", None, [], ssl=True, new=True),   # web-ish, no fingerprint available
+        fx.port("192.0.2.34", 2200, "ssh", "OpenSSH", ["cpe:/a:openbsd:openssh:10.4"], new=True),
+    ]
+    httpx_mock.add_response(url=f"{BASE}/ports?ip=192.0.2.0%2F24&new_only=true", json=fx.envelope(new_ports, scroll_id=None))
+    httpx_mock.add_response(url=f"{BASE}/cves?ip=192.0.2.0%2F24&new_only=true", json=fx.envelope([], scroll_id=None))
+    httpx_mock.add_response(url=f"{BASE}/vulns_web?ip=192.0.2.0%2F24&new_only=true", json=fx.envelope([], scroll_id=None))
+    httpx_mock.add_response(url=f"{BASE}/httpinfo?ip=192.0.2.0%2F24", json=fx.envelope(fx.HTTP, scroll_id=None))
+    async with Client(server) as client:
+        result = await client.call_tool("recent_changes", {"target": cidr})
+    data = _payload(result)
+    by_port = {(s["ip"], s["port"]): s for s in data["new_services"]}
+    assert by_port[("192.0.2.53", 443)]["http"] == {
+        "http_status": 200, "title": "Welcome", "tech": ["Apache HTTP Server:2.4.68"], "last_seen": "2026-09-15",
+    }
+    assert by_port[("192.0.2.160", 443)]["http"] is None      # web service without a fingerprint row
+    assert "http" not in by_port[("192.0.2.34", 2200)]         # not a web service: no key at all
+    # one /httpinfo request for the whole range, not one per service, and without new_only
+    http_reqs = [r for r in httpx_mock.get_requests() if r.url.path == "/httpinfo"]
+    assert len(http_reqs) == 1 and "new_only" not in http_reqs[0].url.params
+    assert len(httpx_mock.get_requests()) == 4
