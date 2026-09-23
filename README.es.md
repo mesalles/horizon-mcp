@@ -103,11 +103,12 @@ Dentro de Claude Code, `/mcp` muestra el estado del servidor y las herramientas 
 ```bash
 uv run horizon-mcp --check                     # valida la configuración y sale
 uv run horizon-mcp --ping                      # llamada real a HORIZON: API, cuenta, rangos
-uv run mcp dev src/horizon_mcp/server.py       # MCP Inspector (requiere Node: usa npx)
+uv run mcp dev inspector.py                    # MCP Inspector (requiere Node: usa npx)
 ```
 
-El **MCP Inspector** se abre en el navegador: lista de herramientas, esquemas y llamadas manuales con el
-JSON de respuesta. Con `--log-level DEBUG` el servidor también muestra cada petición HTTP a HORIZON por stderr.
+El **MCP Inspector** se abre en el navegador (hay que abrir la URL **con el token** que imprime): botón *Connect*,
+pestaña *Tools* → *List Tools*, elige una herramienta, rellena los parámetros y *Run Tool*. `inspector.py` es solo un
+punto de entrada que importa el servidor como paquete; `mcp dev` no puede cargar `server.py` directamente. Con `--log-level DEBUG` el servidor también muestra cada petición HTTP a HORIZON por stderr.
 
 ## Servicio compartido (HTTP)
 
