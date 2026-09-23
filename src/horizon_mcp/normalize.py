@@ -149,11 +149,18 @@ def port_row(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def aggregate_cves(rows: list[dict[str, Any]], *, min_cvss: float = 0.0) -> list[dict[str, Any]]:
+def aggregate_cves(
+    rows: list[dict[str, Any]],
+    *,
+    min_cvss: float = 0.0,
+    max_cves_per_group: int | None = None,
+) -> list[dict[str, Any]]:
     """Group ``/cves`` rows (one per CVE) into one record per (ip, port, CPE).
 
     Mirrors how a vulnerability manager would store it: the affected service with
     its list of CVEs, the highest CVSS, and the counts. Sorted by max CVSS desc.
+    With *max_cves_per_group*, each group keeps only its top-N CVEs by CVSS while
+    ``cve_count`` still reports the full number (``cves_truncated`` says how many).
     """
     groups: dict[tuple[str, int, str], dict[str, Any]] = {}
     for raw in rows:
@@ -193,6 +200,9 @@ def aggregate_cves(rows: list[dict[str, Any]], *, min_cvss: float = 0.0) -> list
     for grp in groups.values():
         grp["cves"].sort(key=lambda c: c["cvss"], reverse=True)
         grp["days_since_last_seen"] = days_since(grp["last_seen"])
+        if max_cves_per_group is not None and len(grp["cves"]) > max_cves_per_group:
+            grp["cves_truncated"] = len(grp["cves"]) - max_cves_per_group
+            grp["cves"] = grp["cves"][:max_cves_per_group]
     return sorted(groups.values(), key=lambda g: (g["max_cvss"], g["cve_count"]), reverse=True)
 
 

@@ -9,8 +9,11 @@ Design rules:
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import AsyncIterator
+import re
+import socket
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -44,8 +47,9 @@ IP ranges. Use it to answer questions such as "what does host X expose?", "which
 in this /24 have known CVEs?", or "what changed since the last scan cycle?".
 
 Facts to keep in mind when interpreting results:
-- Targets are IP addresses or CIDR ranges, never hostnames. Call `inventory` first if you
-  do not know the institution's ranges.
+- Targets are IP addresses, CIDR ranges or hostnames. Hostnames are resolved by this
+  server (not by HORIZON) and the response echoes `resolved_ips`. Call `inventory` first
+  if you do not know the institution's ranges.
 - Data comes from HORIZON's own scan cycle (typically weekly), and each index (ports,
   HTTP, CVEs, web findings, TLS) runs on its own cadence, so dates differ between them.
   `last_seen` / `days_since_last_seen` tell you how fresh a record is; `new=true` means
@@ -108,6 +112,77 @@ def _target(app: AppContext, target: str) -> str:
     return validate_target(target, min_prefix_len=app.settings.min_prefix_len)
 
 
+_HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$", re.I
+)
+MAX_RESOLVED_IPS = 4
+
+
+def _getaddrinfo(host: str) -> list[tuple[Any, ...]]:
+    """Thin wrapper so tests can monkeypatch DNS resolution."""
+    return socket.getaddrinfo(host, None)
+
+
+@dataclass
+class Resolved:
+    """What a user-supplied target turned into: one or more IPs/CIDRs to query."""
+
+    targets: list[str]
+    hostname: str | None = None
+
+    def fields(self) -> dict[str, Any]:
+        """Echo of the target for tool responses (`resolved_ips` when a name was given)."""
+        if self.hostname:
+            return {"target": self.hostname, "resolved_ips": list(self.targets)}
+        return {"target": self.targets[0]}
+
+
+async def _resolve(app: AppContext, value: str) -> Resolved:
+    """Accept an IP, a CIDR or a hostname. Hostnames are resolved (A + AAAA) on the
+    machine running this server, which may differ from the Internet's view if there
+    is split-horizon DNS. HORIZON itself only understands IPs."""
+    try:
+        return Resolved([_target(app, value)])
+    except TargetError:
+        name = (value or "").strip().rstrip(".")
+        if not _HOSTNAME_RE.match(name):
+            raise
+    loop = asyncio.get_running_loop()
+    try:
+        infos = await loop.run_in_executor(None, _getaddrinfo, name)
+    except socket.gaierror as exc:
+        raise TargetError(
+            f"{name!r} does not resolve ({exc.strerror or exc}). Note that resolution happens on "
+            "the machine running horizon-mcp, not on HORIZON."
+        ) from exc
+    seen: dict[str, None] = {}
+    for _family, _type, _proto, _canon, sockaddr in infos:
+        seen.setdefault(sockaddr[0], None)
+    ips = sorted(seen, key=lambda ip: (":" in ip, ip))  # IPv4 first
+    if not ips:
+        raise TargetError(f"{name!r} resolved to no addresses")
+    if len(ips) > MAX_RESOLVED_IPS:
+        raise TargetError(
+            f"{name!r} resolves to {len(ips)} addresses ({', '.join(ips)}); query one IP at a time"
+        )
+    return Resolved(ips, hostname=name)
+
+
+async def _fetch(
+    fn: Callable[..., Awaitable[tuple[list[dict[str, Any]], int]]],
+    res: Resolved,
+    **kwargs: Any,
+) -> tuple[list[dict[str, Any]], int]:
+    """Run a client query for every resolved target and merge rows and totals."""
+    rows: list[dict[str, Any]] = []
+    total = 0
+    for target in res.targets:
+        part, n = await fn(target, **kwargs)
+        rows.extend(part)
+        total += n
+    return rows, total
+
+
 def _error(exc: Exception) -> dict[str, Any]:
     """Return errors as data so the model can explain them instead of crashing the turn."""
     return {"error": str(exc)}
@@ -152,7 +227,8 @@ async def open_ports(
     """Open ports and detected services (Nmap-style) for an IP or CIDR, as seen from the Internet.
 
     Args:
-        target: an IPv4/IPv6 address or CIDR, e.g. "192.0.2.10" or "192.0.2.0/24".
+        target: IPv4/IPv6 address, CIDR or hostname, e.g. "192.0.2.10", "192.0.2.0/24"
+            or "www.example.edu". Hostnames are resolved here (see `resolved_ips`).
         limit: max rows to return (default 200, hard cap 1000). `total` always reports
             the full count so you can tell when the list is truncated.
         new_only: only services first seen in HORIZON's latest scan cycle.
@@ -163,13 +239,13 @@ async def open_ports(
     """
     app = _app(ctx)
     try:
-        cidr = _target(app, target)
-        rows, total = await app.client.ports(cidr, max_rows=_limit(app, limit), new_only=new_only)
+        res = await _resolve(app, target)
+        rows, total = await _fetch(app.client.ports, res, max_rows=_limit(app, limit), new_only=new_only)
     except (TargetError, HorizonError) as exc:
         return _error(exc)
     compact = [port_row(r) for r in rows]
     return {
-        "target": cidr,
+        **res.fields(),
         "total": total,
         "returned": len(compact),
         "summary": hosts_summary(compact),
@@ -192,7 +268,7 @@ async def cves(
     positives on distribution-patched software (e.g. Ubuntu/Debian backports).
 
     Args:
-        target: IPv4/IPv6 address or CIDR.
+        target: IPv4/IPv6 address, CIDR or hostname (resolved here; see `resolved_ips`).
         min_cvss: drop CVEs below this CVSS score (e.g. 7.0 for high+critical only).
         limit: max raw CVE rows to fetch before grouping (default 200, hard cap 1000).
         new_only: only CVEs first seen in the latest scan cycle.
@@ -202,13 +278,13 @@ async def cves(
     """
     app = _app(ctx)
     try:
-        cidr = _target(app, target)
-        rows, total = await app.client.cves(cidr, max_rows=_limit(app, limit), new_only=new_only)
+        res = await _resolve(app, target)
+        rows, total = await _fetch(app.client.cves, res, max_rows=_limit(app, limit), new_only=new_only)
     except (TargetError, HorizonError) as exc:
         return _error(exc)
     groups = aggregate_cves(rows, min_cvss=min_cvss)
     return {
-        "target": cidr,
+        **res.fields(),
         "total_cve_rows": total,
         "fetched_cve_rows": len(rows),
         "services_affected": len(groups),
@@ -227,7 +303,7 @@ async def web_findings(
     misconfigurations, information disclosure, open redirects, TLS issues.
 
     Args:
-        target: IPv4/IPv6 address or CIDR.
+        target: IPv4/IPv6 address, CIDR or hostname (resolved here; see `resolved_ips`).
         limit: max raw rows to fetch (default 200, hard cap 1000).
         new_only: only findings first seen in the latest scan cycle.
 
@@ -238,13 +314,13 @@ async def web_findings(
     """
     app = _app(ctx)
     try:
-        cidr = _target(app, target)
-        rows, total = await app.client.vulns_web(cidr, max_rows=_limit(app, limit), new_only=new_only)
+        res = await _resolve(app, target)
+        rows, total = await _fetch(app.client.vulns_web, res, max_rows=_limit(app, limit), new_only=new_only)
     except (TargetError, HorizonError) as exc:
         return _error(exc)
     groups = aggregate_web_findings(rows)
     return {
-        "target": cidr,
+        **res.fields(),
         "total_rows": total,
         "fetched_rows": len(rows),
         "findings": groups,
@@ -265,11 +341,11 @@ async def tls_certificates(
     """
     app = _app(ctx)
     try:
-        cidr = _target(app, target)
-        rows, total = await app.client.tls(cidr, max_rows=_limit(app, limit))
+        res = await _resolve(app, target)
+        rows, total = await _fetch(app.client.tls, res, max_rows=_limit(app, limit))
     except (TargetError, HorizonError) as exc:
         return _error(exc)
-    return {"target": cidr, "total": total, "returned": len(rows), "certificates": [tls_row(r) for r in rows]}
+    return {**res.fields(), "total": total, "returned": len(rows), "certificates": [tls_row(r) for r in rows]}
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -286,11 +362,11 @@ async def http_services(
     """
     app = _app(ctx)
     try:
-        cidr = _target(app, target)
-        rows, total = await app.client.httpinfo(cidr, max_rows=_limit(app, limit))
+        res = await _resolve(app, target)
+        rows, total = await _fetch(app.client.httpinfo, res, max_rows=_limit(app, limit))
     except (TargetError, HorizonError) as exc:
         return _error(exc)
-    return {"target": cidr, "total": total, "returned": len(rows), "services": [http_row(r) for r in rows]}
+    return {**res.fields(), "total": total, "returned": len(rows), "services": [http_row(r) for r in rows]}
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -308,21 +384,24 @@ async def end_of_life(
     """
     app = _app(ctx)
     try:
-        cidr = _target(app, target)
-        rows, total = await app.client.eol(cidr, max_rows=_limit(app, limit))
+        res = await _resolve(app, target)
+        rows, total = await _fetch(app.client.eol, res, max_rows=_limit(app, limit))
     except (TargetError, HorizonError) as exc:
         return _error(exc)
-    return {"target": cidr, "total": total, "returned": len(rows), "hosts": [eol_row(r) for r in rows]}
+    return {**res.fields(), "total": total, "returned": len(rows), "hosts": [eol_row(r) for r in rows]}
 
 
 @mcp.tool(annotations=READ_ONLY)
-async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
+async def exposure_summary(ctx: Context, host: str, min_cvss: float = 0.0) -> dict[str, Any]:
     """One-call overview of a single host's external exposure: open ports and services,
     the HTTP fingerprint of each web service (status, page title, technologies), CVE
     groups per service (highest CVSS first), web findings, and TLS certificates.
 
-    Use this when an analyst asks "what does <IP> expose?" Pass a single IP address;
-    for ranges use the individual tools. Everything HORIZON knows about the host is
+    Use this when an analyst asks "what does <IP or hostname> expose?" Pass a single IP
+    address or a hostname (resolved here; if it maps to several IPs the first IPv4 is
+    summarised and the rest are listed in `other_resolved_ips`); for ranges use the
+    individual tools. CVE groups keep their top 10 CVEs by CVSS (`cve_count` is the
+    full number); pass `min_cvss` (e.g. 7.0) to drop low-scored CVEs entirely. Everything HORIZON knows about the host is
     fetched (no truncation), so keep it to one host at a time. There is no need to
     call `http_services`, `cves`, `web_findings` or `tls_certificates` afterwards for
     the same host: their data is already included.
@@ -335,9 +414,10 @@ async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
     """
     app = _app(ctx)
     try:
-        ip = _target(app, host)
-        if "/" in ip:
-            raise TargetError("exposure_summary takes a single IP address, not a range")
+        res = await _resolve(app, host)
+        if any("/" in t for t in res.targets):
+            raise TargetError("exposure_summary takes a single IP address or hostname, not a range")
+        ip = res.targets[0]
         ports, _ = await app.client.ports(ip)
         http_rows, _ = await app.client.httpinfo(ip)
         cve_rows, _ = await app.client.cves(ip)
@@ -348,7 +428,7 @@ async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
 
     compact_ports = [port_row(r) for r in ports]
     http = [http_row(r) for r in http_rows]
-    cve_groups = aggregate_cves(cve_rows)
+    cve_groups = aggregate_cves(cve_rows, min_cvss=min_cvss, max_cves_per_group=10)
     web = aggregate_web_findings(web_rows)
     certs = [tls_row(r) for r in tls_rows]
     hostnames = sorted(
@@ -366,6 +446,8 @@ async def exposure_summary(ctx: Context, host: str) -> dict[str, Any]:
 
     return {
         "host": ip,
+        "resolved_from": res.hostname,
+        "other_resolved_ips": res.targets[1:],
         "hostnames_from_certificates": hostnames,
         "data_freshness": {
             "services": cycle_date,
@@ -403,16 +485,16 @@ async def recent_changes(
     disappeared; compare with `open_ports` if you need that.
 
     Args:
-        target: IPv4/IPv6 address or CIDR.
+        target: IPv4/IPv6 address, CIDR or hostname (resolved here; see `resolved_ips`).
         limit: max raw rows to fetch per source (default 200, hard cap 1000).
     """
     app = _app(ctx)
     try:
-        cidr = _target(app, target)
+        res = await _resolve(app, target)
         cap = _limit(app, limit)
-        ports, ports_total = await app.client.ports(cidr, max_rows=cap, new_only=True)
-        cve_rows, cves_total = await app.client.cves(cidr, max_rows=cap, new_only=True)
-        web_rows, web_total = await app.client.vulns_web(cidr, max_rows=cap, new_only=True)
+        ports, ports_total = await _fetch(app.client.ports, res, max_rows=cap, new_only=True)
+        cve_rows, cves_total = await _fetch(app.client.cves, res, max_rows=cap, new_only=True)
+        web_rows, web_total = await _fetch(app.client.vulns_web, res, max_rows=cap, new_only=True)
     except (TargetError, HorizonError) as exc:
         return _error(exc)
 
@@ -425,7 +507,7 @@ async def recent_changes(
         + [f["first_seen"] for f in new_web if f.get("first_seen")]
     )
     return {
-        "target": cidr,
+        **res.fields(),
         "cycle_date": max(cycle_dates, default=None),
         "counts": {
             "new_services": len(new_services),

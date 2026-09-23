@@ -38,11 +38,13 @@ pròpia clau d'API. Al codi no hi ha res específic de cap institució; els rang
 | `tls_certificates(target, limit?)` | Certificats i connexió TLS dels serveis HTTPS: CN, SAN, emissor, caducitat, versió i xifratge. |
 | `http_services(target, limit?)` | Fingerprint HTTP: codi, títol, tecnologies detectades, CPE derivats. |
 | `end_of_life(target, limit?)` | Serveis amb programari en fi de vida (dades tipus endoflife.date). |
-| `exposure_summary(host)` | Resum en una crida de tot el que HORIZON sap d'un únic host: serveis, fitxa HTTP, CVE per servei, troballes web i certificats. |
+| `exposure_summary(host, min_cvss?)` | Resum en una crida de tot el que HORIZON sap d'un únic host (IP o nom): serveis, fitxa HTTP, CVE per servei (top 10 per CVSS, amb el recompte total), troballes web, certificats i frescor de cada font. |
 | `recent_changes(target, limit?)` | Novetats de l'últim cicle d'escaneig en una crida: serveis nous, CVE noves per servei i troballes web noves, amb la data del cicle. |
 
-`target` és sempre una **IP o un CIDR** (HORIZON no admet noms de host; /16 o més estret). Les llistes
-retornen `total` i `returned` perquè el model sàpiga si s'han truncat.
+`target` pot ser una **IP, un CIDR** (/16 o més estret) **o un nom de host**. HORIZON només entén IP, així
+que els noms els resol el propi servidor (A i AAAA, fins a 4 adreces) i la resposta inclou `resolved_ips`;
+tingueu en compte que la resolució la fa la màquina on corre el servidor, no Internet. Les llistes retornen
+`total` i `returned` perquè el model sàpiga si s'han truncat.
 
 > **Interpreteu les CVE amb cura.** HORIZON les infereix del producte i la versió detectats (CPE), no
 > les verifica. Hi ha falsos positius habituals per *backports* de distribució (Ubuntu, Debian) i rangs
