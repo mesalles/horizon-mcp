@@ -40,6 +40,10 @@ class Settings:
     hard_max_rows: int = 1000
     # Smallest IPv4 prefix length accepted as a target (a /16 is the usual institution range).
     min_prefix_len: int = 16
+    # Shared secret MCP clients must present as ``Authorization: Bearer …`` when the
+    # server runs over streamable-http. None = no client authentication (stdio, or an
+    # explicit --allow-unauthenticated behind a proxy that authenticates).
+    mcp_bearer_token: str | None = None
 
 
 def load_settings(env_file: Path | None = None) -> Settings:
@@ -87,4 +91,5 @@ def load_settings(env_file: Path | None = None) -> Settings:
         timeout_seconds=_float("HORIZON_TIMEOUT", 60.0),
         min_request_interval=_float("HORIZON_MIN_INTERVAL", 0.5),
         default_max_rows=_int("HORIZON_MAX_ROWS", 200),
+        mcp_bearer_token=os.getenv("HORIZON_MCP_BEARER_TOKEN", "").strip() or None,
     )
