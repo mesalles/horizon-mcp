@@ -111,15 +111,34 @@ punt d'entrada que importa el servidor com a paquet; `mcp dev` no pot carregar `
 
 ## Servei compartit (HTTP)
 
-El mateix codi pot córrer com a servei per a tot un equip:
+El mateix codi pot córrer com a servei per a tot un equip. Com que el servidor parla amb HORIZON amb la
+clau de la institució, **qui arriba al port veu tot el que veu la clau**: per això en mode HTTP demana un
+secret compartit als clients i es nega a obrir un port accessible sense cap autenticació.
 
 ```bash
+# 1) Genereu un secret i poseu-lo a .env com a HORIZON_MCP_BEARER_TOKEN
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# 2) Arrenqueu-lo (darrere d'un proxy invers amb TLS: Caddy, nginx, Traefik…; exposeu només /mcp)
 uv run horizon-mcp --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
-El servidor **no autentica els clients**: poseu-lo darrere d'un proxy invers amb TLS i autenticació
-(Caddy, nginx, Traefik…) i exposeu només `/mcp`. Els clients s'hi connecten amb
-`claude mcp add --transport http horizon https://el-vostre-host/mcp`.
+| Transport | `--host` | `HORIZON_MCP_BEARER_TOKEN` | Resultat |
+|---|---|---|---|
+| stdio | — | — | Arrenca; no s'aplica cap autenticació (qui llança el procés és qui l'usa). |
+| HTTP | loopback (`127.0.0.1`, `::1`, `localhost`) | qualsevol | Arrenca. Sense token, només hi arriba qui ja és a la màquina (o el proxy). |
+| HTTP | altre (`0.0.0.0`, una IP…) | definit | Arrenca; cada petició ha de portar `Authorization: Bearer <token>`, si no rep `401`. |
+| HTTP | altre | no definit | **Es nega a arrencar** amb un missatge clar. `--allow-unauthenticated` ho força, per a qui ja autentica al proxy i n'assumeix el risc. |
+
+Els clients passen el token com a capçalera:
+
+```bash
+claude mcp add --transport http horizon https://el-vostre-host/mcp --header "Authorization: Bearer <token>"
+```
+
+`--check` i `--ping` indiquen si el token de clients està configurat (mai en mostren el valor). El token
+és un únic secret per instància, comparat en temps constant; l'autenticació per usuari, si algun dia cal,
+és feina del proxy.
 
 ## Configuració
 
@@ -130,6 +149,7 @@ El servidor **no autentica els clients**: poseu-lo darrere d'un proxy invers amb
 | `HORIZON_TIMEOUT` | `60` | Segons per petició. |
 | `HORIZON_MIN_INTERVAL` | `0.5` | Segons mínims entre dues peticions a HORIZON. |
 | `HORIZON_MAX_ROWS` | `200` | Límit per defecte de files de les eines de llista (màxim absolut 1.000). |
+| `HORIZON_MCP_BEARER_TOKEN` | — | Només en mode `streamable-http`: secret que els clients MCP han d'enviar com a `Authorization: Bearer …`. Sense ell, el servidor no escolta en adreces que no siguin loopback (vegeu *Servei compartit*). |
 | `HORIZON_USER_AGENT` | `horizon-mcp/<versió> (+URL del repo)` | HORIZON és darrere de Cloudflare, que bloqueja el User-Agent per defecte de les biblioteques HTTP (error 1010). El valor per defecte, que identifica aquest projecte, està verificat; un UA de navegador també passa. |
 
 ## Coses a saber sobre les dades d'HORIZON
