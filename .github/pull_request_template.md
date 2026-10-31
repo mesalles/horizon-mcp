@@ -19,7 +19,8 @@ Closes #
 - [ ] No hi ha secrets, claus reals ni dades reals d'exposició al diff (tests amb 192.0.2.0/24)
 - [ ] He passat els tests (`uv run pytest`)
 - [ ] Si canvia una eina, he revisat el **docstring** (és el que llegeix el model) i les instruccions del servidor
-- [ ] Si canvia l'ús o la configuració, he actualitzat **`README.md` i `README.es.md`** tots dos
+- [ ] Si canvia l'ús o la configuració, he actualitzat el **manual** (`docs/`, les dues llengües: `pàgina.md` i `pàgina.es.md`) i, si cal, **`README.md` i `README.es.md`**
+- [ ] Si canvia una eina o l'ús, he pujat la **versió** (`pyproject.toml`, `src/horizon_mcp/__init__.py`, `uv.lock`) i es crearà l'etiqueta `vX.Y.Z` en fusionar
 - [ ] Els fitxers tenen finals de línia LF (`.gitattributes`)
 
 ## 🧪 Com s'ha verificat?
