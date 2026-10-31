@@ -24,8 +24,10 @@ class TargetError(ValueError):
 def validate_target(target: str, *, min_prefix_len: int = 16) -> str:
     """Return a canonical IP or CIDR string, or raise :class:`TargetError`.
 
-    HORIZON's ``ip`` filter accepts a single address or a CIDR. We refuse
-    hostnames (the API would 422 anyway) and prefixes wider than *min_prefix_len*
+    HORIZON's ``ip`` filter accepts a single address or a CIDR. Hostnames are not
+    handled here: ``server._resolve`` catches the error and resolves them itself,
+    so the message below is what the user sees when the target is neither an IP,
+    a CIDR nor a valid hostname. Prefixes wider than *min_prefix_len* are refused
     to avoid accidentally asking for half the Internet.
     """
     value = (target or "").strip()
@@ -42,8 +44,7 @@ def validate_target(target: str, *, min_prefix_len: int = 16) -> str:
         return str(ipaddress.ip_address(value))
     except ValueError as exc:
         raise TargetError(
-            f"{value!r} is not an IP address or CIDR. HORIZON is queried by address range, "
-            "not by hostname: resolve the name first."
+            f"{value!r} is not an IP address, a CIDR (such as 192.0.2.0/24) or a valid hostname."
         ) from exc
 
 

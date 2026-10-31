@@ -1,4 +1,4 @@
-[Català](README.md) · [Castellano](README.es.md)
+[Català](README.md) · [Castellano](README.es.md) · **Manual: [català](https://mesalles.github.io/horizon-mcp/) · [castellano](https://mesalles.github.io/horizon-mcp/es/)**
 
 # horizon-mcp
 
@@ -22,9 +22,8 @@ salen de la API.
 
 - **Solo lectura.** Todas las herramientas son consultas GET a HORIZON, declaradas como `readOnly` en el protocolo.
 - **Pocas herramientas de alto nivel**, no un espejo de los 24 endpoints de la API. Los resultados se
-  **recortan y agregan** en el servidor (fuera `geoip`, `asn`, banners en bruto; CVE agrupadas por servicio;
-  hallazgos web agrupados por URL) para que quepan en el contexto del modelo.
-- **Paginación y ritmo** gestionados internamente (páginas de 1.000 filas, espaciado mínimo entre peticiones).
+  **recortan y agregan** en el servidor para que quepan en el contexto del modelo.
+- **Paginación y ritmo** gestionados internamente.
 - **La clave de API nunca sale** del servidor: ni al modelo, ni a los registros, ni a los errores.
 - No escribe nada, no lanza escaneos, no modifica el inventario de HORIZON.
 
@@ -32,31 +31,27 @@ salen de la API.
 
 | Herramienta | Qué devuelve |
 |---|---|
-| `inventory()` | Rangos IP y dominios raíz de la cuenta. Llamadla primero si no conocéis los rangos. |
-| `open_ports(target, limit?, new_only?)` | Puertos y servicios abiertos (estilo Nmap) por IP o CIDR, con resumen por host. |
-| `cves(target, min_cvss?, limit?, new_only?)` | CVE inferidas del CPE, **agrupadas por servicio** (IP, puerto, CPE), ordenadas por CVSS máximo. |
-| `web_findings(target, limit?, new_only?)` | Hallazgos de plantillas Nuclei (paneles, malas configuraciones, fugas de información…), agrupados por (IP, puerto, nombre). |
-| `tls_certificates(target, limit?)` | Certificados y conexión TLS de los servicios HTTPS: CN, SAN, emisor, caducidad, versión y cifrado. |
-| `http_services(target, limit?)` | Fingerprint HTTP: código, título, tecnologías detectadas, CPE derivados. |
-| `end_of_life(target, limit?)` | Servicios con software en fin de vida (datos tipo endoflife.date). |
-| `exposure_summary(host, min_cvss?)` | Resumen en una llamada de todo lo que HORIZON sabe de un único host (IP o nombre): servicios, ficha HTTP, CVE por servicio (top 10 por CVSS, con el recuento total), hallazgos web, certificados y frescura de cada fuente. |
-| `recent_changes(target, limit?)` | Novedades del último ciclo de escaneo en una llamada: servicios nuevos (con la ficha HTTP de los que son web), CVE nuevas por servicio y hallazgos web nuevos, con la fecha del ciclo. |
+| `inventory()` | Rangos IP y dominios raíz de la cuenta. |
+| `open_ports(target, limit?, new_only?)` | Puertos y servicios abiertos (estilo Nmap), con resumen por host. |
+| `cves(target, min_cvss?, limit?, new_only?)` | CVE inferidas del CPE, agrupadas por servicio, ordenadas por CVSS máximo. |
+| `web_findings(target, limit?, new_only?)` | Hallazgos de plantillas Nuclei, agrupados por (IP, puerto, nombre). |
+| `tls_certificates(target, limit?)` | Certificados y conexión TLS de los servicios HTTPS. |
+| `http_services(target, limit?)` | Fingerprint HTTP: código, título, tecnologías, CPE derivados. |
+| `end_of_life(target, limit?)` | Servicios con software en fin de vida. |
+| `exposure_summary(host, min_cvss?)` | Todo lo que HORIZON sabe de un único host, en una llamada. |
+| `recent_changes(target, limit?)` | Novedades del último ciclo de escaneo, en una llamada. |
 
-`target` puede ser una **IP, un CIDR** (/16 o más estrecho) **o un nombre de host**. HORIZON solo entiende
-IP, así que los nombres los resuelve el propio servidor (A y AAAA, hasta 4 direcciones) y la respuesta incluye
-`resolved_ips`; tened en cuenta que la resolución la hace la máquina donde corre el servidor, no Internet.
-Las listas devuelven `total` y `returned` para que el modelo sepa si se han truncado.
+`target` puede ser una IP, un CIDR (/16 o más estrecho) o un nombre de host (resuelto por el servidor). Detalles,
+parámetros y campos de respuesta: [Herramientas](https://mesalles.github.io/horizon-mcp/es/referencia/eines/) y
+[Campos de respuesta](https://mesalles.github.io/horizon-mcp/es/referencia/camps/) en el manual.
 
 > **Interpretad las CVE con cuidado.** HORIZON las infiere del producto y la versión detectados (CPE), no
-> las verifica. Hay falsos positivos habituales por *backports* de distribución (Ubuntu, Debian) y rangos de
-> versión abiertos en NVD. Las instrucciones del servidor ya se lo recuerdan al modelo.
+> las verifica. Ver [Interpretar las CVE](https://mesalles.github.io/horizon-mcp/es/guies/interpretar-cve/).
 
-## Requisitos
+## Instalación rápida
 
-- Python ≥ 3.13 y [uv](https://docs.astral.sh/uv/).
-- Una clave de API de HORIZON. Está en la interfaz web: menú de usuario (arriba a la derecha) → **Mi perfil** → **Información**.
-
-## Instalación
+Requisitos: Python ≥ 3.13, [uv](https://docs.astral.sh/uv/) y una clave de API de HORIZON (interfaz web:
+menú de usuario → **Mi perfil** → **Información**).
 
 ```bash
 git clone https://github.com/mesalles/horizon-mcp.git
@@ -66,114 +61,17 @@ cp .env.example .env        # y poned HORIZON_API_KEY
 uv run horizon-mcp --ping   # comprueba clave, conectividad e inventario sin arrancar el servidor
 ```
 
-El fichero `.env` está en el `.gitignore`. Alternativamente, la clave puede pasarse como variable de
-entorno desde la configuración del cliente MCP; el `.env` tiene la ventaja de que la configuración del
-cliente no contiene ningún secreto.
+Después, en el manual:
 
-## Uso con Claude Desktop
-
-Editad `claude_desktop_config.json` (Windows: `%APPDATA%\Claude\`; macOS:
-`~/Library/Application Support/Claude/`) y añadid:
-
-```json
-{
-  "mcpServers": {
-    "horizon": {
-      "command": "uv",
-      "args": ["run", "--directory", "/ruta/absoluta/a/horizon-mcp", "horizon-mcp"]
-    }
-  }
-}
-```
-
-En Windows, `command` debe ser la ruta absoluta de `uv.exe` (la aplicación de escritorio no tiene el PATH
-de la consola) y las barras de la ruta, dobles (`C:\\Users\\...`). Reiniciad Claude Desktop: las
-herramientas aparecen en el selector de herramientas del chat.
-
-## Uso con Claude Code
-
-```bash
-claude mcp add --transport stdio --scope user horizon -- uv run --directory /ruta/absoluta/a/horizon-mcp horizon-mcp
-```
-
-Dentro de Claude Code, `/mcp` muestra el estado del servidor y las herramientas cargadas.
-
-## Probarlo sin ningún cliente
-
-```bash
-uv run horizon-mcp --check                     # valida la configuración y sale
-uv run horizon-mcp --ping                      # llamada real a HORIZON: API, cuenta, rangos
-uv run mcp dev inspector.py                    # MCP Inspector (requiere Node: usa npx)
-```
-
-El **MCP Inspector** se abre en el navegador (hay que abrir la URL **con el token** que imprime): botón *Connect*,
-pestaña *Tools* → *List Tools*, elige una herramienta, rellena los parámetros y *Run Tool*. `inspector.py` es solo un
-punto de entrada que importa el servidor como paquete; `mcp dev` no puede cargar `server.py` directamente. Con `--log-level DEBUG` el servidor también muestra cada petición HTTP a HORIZON por stderr.
-
-## Servicio compartido (HTTP)
-
-El mismo código puede correr como servicio para todo un equipo. Como el servidor habla con HORIZON con la
-clave de la institución, **quien llega al puerto ve todo lo que ve la clave**: por eso en modo HTTP exige un
-secreto compartido a los clientes y se niega a abrir un puerto accesible sin ninguna autenticación.
-
-```bash
-# 1) Generad un secreto y ponedlo en .env como HORIZON_MCP_BEARER_TOKEN
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-
-# 2) Arrancadlo (detrás de un proxy inverso con TLS: Caddy, nginx, Traefik…; exponed solo /mcp)
-uv run horizon-mcp --transport streamable-http --host 127.0.0.1 --port 8000
-```
-
-| Transporte | `--host` | `HORIZON_MCP_BEARER_TOKEN` | Resultado |
-|---|---|---|---|
-| stdio | — | — | Arranca; no se aplica ninguna autenticación (quien lanza el proceso es quien lo usa). |
-| HTTP | loopback (`127.0.0.1`, `::1`, `localhost`) | cualquiera | Arranca. Sin token, solo llega quien ya está en la máquina (o el proxy). |
-| HTTP | otro (`0.0.0.0`, una IP…) | definido | Arranca; cada petición debe llevar `Authorization: Bearer <token>`, si no recibe `401`. |
-| HTTP | otro | no definido | **Se niega a arrancar** con un mensaje claro. `--allow-unauthenticated` lo fuerza, para quien ya autentica en el proxy y asume el riesgo. |
-
-Los clientes pasan el token como cabecera:
-
-```bash
-claude mcp add --transport http horizon https://vuestro-host/mcp --header "Authorization: Bearer <token>"
-```
-
-`--check` y `--ping` indican si el token de clientes está configurado (nunca muestran su valor). El token
-es un único secreto por instancia, comparado en tiempo constante; la autenticación por usuario, si algún
-día hace falta, es cosa del proxy.
-
-## Configuración
-
-| Variable | Por defecto | Descripción |
-|---|---|---|
-| `HORIZON_API_KEY` | — | **Obligatoria.** Clave de API de la cuenta. |
-| `HORIZON_API_URL` | `https://api.horizon.delta90.com` | URL base de la API. |
-| `HORIZON_TIMEOUT` | `60` | Segundos por petición. |
-| `HORIZON_MIN_INTERVAL` | `0.5` | Segundos mínimos entre dos peticiones a HORIZON. |
-| `HORIZON_MAX_ROWS` | `200` | Límite por defecto de filas de las herramientas de lista (máximo absoluto 1.000). |
-| `HORIZON_MCP_BEARER_TOKEN` | — | Solo en modo `streamable-http`: secreto que los clientes MCP deben enviar como `Authorization: Bearer …`. Sin él, el servidor no escucha en direcciones que no sean loopback (ver *Servicio compartido*). |
-| `HORIZON_USER_AGENT` | `horizon-mcp/<versión> (+URL del repo)` | HORIZON está detrás de Cloudflare, que bloquea el User-Agent por defecto de las bibliotecas HTTP (error 1010). El valor por defecto, que identifica este proyecto, está verificado; un UA de navegador también pasa. |
-
-## Cosas que conviene saber sobre los datos de HORIZON
-
-Descubiertas empíricamente: la documentación de la API no describe los campos de respuesta.
-
-- El ciclo de escaneo es, en la práctica, **semanal**. `last_seen` indica la frescura de un registro;
-  `new` / `new_only` significa «visto por primera vez en el último ciclo», no «desde vuestra última consulta».
-- El inventario de las cuentas provisionadas por RedIRIS contiene **solo rangos IP**, por contrato. Los
-  endpoints por dominio (DNS, typosquatting, correo…) devuelven vacío y por eso no se exponen como herramientas.
-- Los CPE llegan en formato **2.2** en `/ports`, `/cves` y `/eol`, y en **2.3** en `/httpinfo` y `/tls`.
-  Se devuelven tal como vienen; hay un conversor en `normalize.cpe22_to_23` si lo necesitáis.
-- Los nombres de los hallazgos web son **traducciones al castellano** de los títulos de plantilla de Nuclei;
-  la API no da el identificador de plantilla ni CVE/CVSS para estos.
-- `/eol` **no incluye el puerto**.
-- La severidad `panel` (página de inicio de sesión expuesta) es una categoría propia de HORIZON.
-- **HORIZON conecta por IP**, sin SNI ni cabecera `Host` del nombre real: los títulos y tecnologías HTTP son
-  los del *virtual host* por defecto, y el certificado nunca coincide con el nombre (por eso no se reporta
-  ningún `name_mismatch`). El sitio real que hay detrás de un nombre puede ser otro.
-- **Cada índice tiene su cadencia.** Todas las filas llevan `last_seen` y `days_since_last_seen`; el resumen
-  de un host incluye `data_freshness` (última observación por fuente) y marca cada hallazgo web y grupo de CVE
-  con `observed_in_latest_cycle`. Un hallazgo con `false` no se ha vuelto a ver en el último ciclo de los
-  servicios del host y probablemente es histórico.
+- [Primer uso](https://mesalles.github.io/horizon-mcp/es/tutorials/primer-us/) (paso a paso hasta la primera pregunta)
+- [Conectar Claude Desktop](https://mesalles.github.io/horizon-mcp/es/guies/claude-desktop/) ·
+  [Conectar Claude Code](https://mesalles.github.io/horizon-mcp/es/guies/claude-code/) ·
+  [Probar sin ningún cliente](https://mesalles.github.io/horizon-mcp/es/guies/provar-sense-client/)
+- [Servicio compartido (HTTP)](https://mesalles.github.io/horizon-mcp/es/guies/servei-compartit/) con token para los clientes
+- [Configuración](https://mesalles.github.io/horizon-mcp/es/referencia/configuracio/) ·
+  [Línea de comandos](https://mesalles.github.io/horizon-mcp/es/referencia/cli/) ·
+  [Los datos de HORIZON](https://mesalles.github.io/horizon-mcp/es/referencia/dades-horizon/) ·
+  [Seguridad](https://mesalles.github.io/horizon-mcp/es/explicacio/seguretat/)
 
 ## Desarrollo
 
@@ -183,7 +81,8 @@ uv run pytest
 ```
 
 Los tests no tocan HORIZON: usan muestras con la forma exacta de las respuestas reales y direcciones de
-documentación (192.0.2.0/24).
+documentación (192.0.2.0/24). El manual está en `docs/` (MkDocs Material, catalán y castellano) y se
+publica en GitHub Pages al fusionar en `main`; `mkdocs build --strict` se comprueba en cada PR.
 
 ## Condiciones de uso de HORIZON
 

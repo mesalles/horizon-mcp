@@ -44,7 +44,7 @@ API: horizon-api 2.5.3 status=ok
 Account(s): 00000000-0000-4000-8000-000000000001
 Ranges: 192.0.2.0/24
 Root domains: (none)
-User-Agent accepted: 'horizon-mcp/0.1.0 (+https://github.com/mesalles/horizon-mcp)'
+User-Agent accepted: 'horizon-mcp/0.2.0 (+https://github.com/mesalles/horizon-mcp)'
 Client bearer token (streamable-http): not set
 ```
 
