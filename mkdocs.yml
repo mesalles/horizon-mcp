@@ -1,0 +1,122 @@
+# Manual d'usuari d'horizon-mcp: documentació com a codi (docs/), bilingüe (català per defecte,
+# castellà amb sufix .es.md), MkDocs Material + Diátaxis. Comprovació: mkdocs build --strict.
+site_name: horizon-mcp · Manual d'usuari
+site_description: Com instal·lar, connectar i preguntar a horizon-mcp, el servidor MCP de només lectura sobre l'API d'HORIZON.
+site_url: https://mesalles.github.io/horizon-mcp/
+repo_url: https://github.com/mesalles/horizon-mcp
+repo_name: mesalles/horizon-mcp
+edit_uri: edit/main/docs/
+copyright: horizon-mcp · MIT
+
+theme:
+  name: material
+  language: ca
+  font: false
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Mode fosc
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Mode clar
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: ca
+          default: true
+          name: Català
+          build: true
+        - locale: es
+          name: Castellano
+          build: true
+          site_name: horizon-mcp · Manual de usuario
+          site_description: Cómo instalar, conectar y preguntar a horizon-mcp, el servidor MCP de solo lectura sobre la API de HORIZON.
+          nav_translations:
+            Inici: Inicio
+            Tutorial: Tutorial
+            Primer ús: Primer uso
+            Guies pràctiques: Guías prácticas
+            Instal·lar: Instalar
+            Connectar Claude Desktop: Conectar Claude Desktop
+            Connectar Claude Code: Conectar Claude Code
+            Provar sense cap client: Probar sin ningún cliente
+            Servei compartit (HTTP): Servicio compartido (HTTP)
+            Preguntar bé: Preguntar bien
+            Interpretar les CVE: Interpretar las CVE
+            Diagnosticar problemes: Diagnosticar problemas
+            Referència: Referencia
+            Eines: Herramientas
+            Configuració: Configuración
+            Línia d'ordres: Línea de comandos
+            Camps de resposta: Campos de respuesta
+            Les dades d'HORIZON: Los datos de HORIZON
+            Glossari: Glosario
+            Explicació: Explicación
+            Què és MCP: Qué es MCP
+            Disseny del servidor: Diseño del servidor
+            Seguretat: Seguridad
+            Frescor de les dades: Frescura de los datos
+
+nav:
+  - Inici: index.md
+  - Tutorial:
+      - Primer ús: tutorials/primer-us.md
+  - Guies pràctiques:
+      - Instal·lar: guies/instal-lar.md
+      - Connectar Claude Desktop: guies/claude-desktop.md
+      - Connectar Claude Code: guies/claude-code.md
+      - Provar sense cap client: guies/provar-sense-client.md
+      - Servei compartit (HTTP): guies/servei-compartit.md
+      - Preguntar bé: guies/preguntar-be.md
+      - Interpretar les CVE: guies/interpretar-cve.md
+      - Diagnosticar problemes: guies/diagnosticar.md
+  - Referència:
+      - Eines: referencia/eines.md
+      - Configuració: referencia/configuracio.md
+      - Línia d'ordres: referencia/cli.md
+      - Camps de resposta: referencia/camps.md
+      - Les dades d'HORIZON: referencia/dades-horizon.md
+      - Glossari: referencia/glossari.md
+  - Explicació:
+      - Què és MCP: explicacio/que-es-mcp.md
+      - Disseny del servidor: explicacio/disseny.md
+      - Seguretat: explicacio/seguretat.md
+      - Frescor de les dades: explicacio/frescor.md

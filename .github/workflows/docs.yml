@@ -1,0 +1,56 @@
+# Manual (docs/ + mkdocs.yml): a cada PR que el toqui, comprova que es construeix sense cap
+# avís (mkdocs build --strict); en fusionar a main, el publica a GitHub Pages.
+# Requisit: Settings → Pages → Source: GitHub Actions. Cap secret: Pages usa el token del job.
+name: Manual
+
+on:
+  pull_request:
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - .github/workflows/docs.yml
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - .github/workflows/docs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  construir:
+    name: Construir (mkdocs build --strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.13"
+      - run: pip install -r docs/requirements.txt
+      - run: mkdocs build --strict
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: site
+
+  publicar:
+    name: Publicar a GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: construir
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.desplegament.outputs.page_url }}
+    steps:
+      - id: desplegament
+        uses: actions/deploy-pages@v5.0.1
